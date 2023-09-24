@@ -270,7 +270,8 @@ extension String {
 public extension [String: String] {
     func parseASSStyle() -> ASSStyle {
         var attributes: [NSAttributedString.Key: Any] = [:]
-        if let fontName = self["Fontname"], let fontSize = self["Fontsize"].flatMap(Double.init) {
+        let fontSize = SubtitleModel.Size.large.rawValue
+        if let fontName = self["Fontname"]/*, let fontSize = self["Fontsize"].flatMap(Double.init)*/ {
             var font = UIFont(name: fontName, size: fontSize) ?? UIFont.systemFont(ofSize: fontSize)
             if let degrees = self["Angle"].flatMap(Double.init), degrees != 0 {
                 let radians = CGFloat(degrees * .pi / 180.0)
