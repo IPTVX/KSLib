@@ -286,6 +286,7 @@ open class SubtitleModel: ObservableObject {
             subtitleDataSouces.forEach { datasouce in
                 addSubtitle(dataSouce: datasouce)
             }
+            // 要用async，不能在更新UI的时候，修改Publishe变量
             DispatchQueue.main.async { [weak self] in
                 self?.parts = []
                 self?.selectedSubtitleInfo = nil
@@ -333,14 +334,10 @@ open class SubtitleModel: ObservableObject {
         if let dataSouce = dataSouce as? SearchSubtitleDataSouce {
             Task {
                 try? await dataSouce.searchSubtitle(url: url)
-                dataSouce.infos.forEach { info in
-                    addSubtitle(info: info)
-                }
+                subtitleInfos.append(contentsOf: dataSouce.infos)
             }
         } else {
-            dataSouce.infos.forEach { info in
-                addSubtitle(info: info)
-            }
+            subtitleInfos.append(contentsOf: dataSouce.infos)
         }
     }
 }
