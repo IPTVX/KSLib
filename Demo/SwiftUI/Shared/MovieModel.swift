@@ -250,17 +250,6 @@ extension MovieModel {
         }
     }
 
-    func save() {
-        guard let context = managedObjectContext else {
-            return
-        }
-        context.perform {
-            do {
-                try context.save()
-            } catch {}
-        }
-    }
-
     func getPlaymodel() -> PlayModel {
         if let playmodel {
             return playmodel
@@ -273,19 +262,13 @@ extension MovieModel {
         newMovieModel.setValuesForKeys(dictionaryWithValues(forKeys: entity.attributesByName.keys.map { $0 }))
         newMovieModel.playmodel = model
         context.assign(newMovieModel, to: privateStore)
-        try? context.save()
+        newMovieModel.save()
         context.delete(self)
         return model
     }
 }
 
-extension NSManagedObject {}
-
-extension PlayModel {
-    convenience init() {
-        self.init(context: PersistenceController.shared.viewContext)
-    }
-
+extension NSManagedObject {
     func save() {
         guard let context = managedObjectContext else {
             return
@@ -295,6 +278,12 @@ extension PlayModel {
                 try context.save()
             } catch {}
         }
+    }
+}
+
+extension PlayModel {
+    convenience init() {
+        self.init(context: PersistenceController.shared.viewContext)
     }
 }
 
