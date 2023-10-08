@@ -106,6 +106,9 @@ open class KSOptions {
         // 参数的配置可以参考protocols.texi 和 http.c
         formatContextOptions["auto_convert"] = 0
         formatContextOptions["fps_probe_size"] = 3
+//        formatContextOptions["probesize"] = 40 * 1024
+//        formatContextOptions["max_analyze_duration"] = 300 * 1000
+
         formatContextOptions["reconnect"] = 1
         // 开启这个，纯ipv6地址会无法播放。
 //        formatContextOptions["reconnect_at_eof"] = 1
@@ -306,12 +309,8 @@ open class KSOptions {
     #if os(tvOS) || os(xrOS)
     open func preferredDisplayCriteria(track: some MediaPlayerTrack) -> AVDisplayCriteria? {
         let refreshRate = track.nominalFrameRate
-        if #available(tvOS 17.0, *) {
-            if let formatDescription = track.formatDescription {
-                return AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
-            } else {
-                return nil
-            }
+        if KSOptions.displayCriteriaFormatDescriptionEnabled, let formatDescription = track.formatDescription, #available(tvOS 17.0, *) {
+            return AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
         } else {
 //            let videoDynamicRange = track.dynamicRange(self).rawValue
 //            return AVDisplayCriteria(refreshRate: refreshRate, videoDynamicRange: videoDynamicRange)
@@ -400,7 +399,7 @@ public extension KSOptions {
     static var hardwareDecode = true
     static var asynchronousDecompression = true
     static var isPipPopViewController = false
-    static var displayCriteriaMatchingEnabled = true
+    static var displayCriteriaFormatDescriptionEnabled = false
     /// 日志级别
     static var logLevel = LogLevel.warning
     static var logger: LogHandler = OSLog(lable: "KSPlayer")
@@ -554,7 +553,7 @@ public class FileLog: LogHandler {
     KSLog(level: .error, error().localizedDescription, file: file, function: function, line: line)
 }
 
-@inlinable public func KSLog(level: LogLevel = KSOptions.logLevel, _ message: @autoclosure () -> CustomStringConvertible, file: String = #file, function: String = #function, line: UInt = #line) {
+@inlinable public func KSLog(level: LogLevel = .warning, _ message: @autoclosure () -> CustomStringConvertible, file: String = #file, function: String = #function, line: UInt = #line) {
     if level.rawValue <= KSOptions.logLevel.rawValue {
         let fileName = (file as NSString).lastPathComponent
         KSOptions.logger.log(level: level, message: message(), file: fileName, function: function, line: line)

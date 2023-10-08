@@ -122,7 +122,7 @@ final class MEPlayerItem {
             if log.hasPrefix("parser not found for codec") {
                 KSLog(log)
             }
-            KSLog(level: LogLevel(rawValue: level) ?? KSOptions.logLevel, log)
+            KSLog(level: LogLevel(rawValue: level) ?? .warning, log)
         }
     }()
 
@@ -204,6 +204,7 @@ extension MEPlayerItem {
 //        formatCtx.pointee.io_open = { formatCtx, context, url, flags, options -> Int32 in
 //            return 0
 //        }
+        setHttpProxy()
         var avOptions = options.formatContextOptions.avOptions
         let urlString: String
         if url.isFileURL {
