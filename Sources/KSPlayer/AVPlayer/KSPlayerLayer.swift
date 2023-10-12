@@ -443,11 +443,14 @@ extension KSPlayerLayer {
     private func setDisplayCriteria(track: some MediaPlayerTrack) {
         guard let displayManager = UIApplication.shared.windows.first?.avDisplayManager,
               displayManager.isDisplayCriteriaMatchingEnabled,
-              !displayManager.isDisplayModeSwitchInProgress
+              !displayManager.isDisplayModeSwitchInProgress,
+              KSOptions.displayCriteriaFromTrackEnabled
         else {
+            print("[AVDisplayCriteria] KSPlayerLayer: Failed to set display criteria. KSOptions.displayCriteriaFromTrackEnabled: \(KSOptions.displayCriteriaFromTrackEnabled)")
             return
         }
         if let criteria = options.preferredDisplayCriteria(track: track) {
+            print("[AVDisplayCriteria] KSPlayerLayer: Display criteria set with success")
             displayManager.preferredDisplayCriteria = criteria
         }
     }

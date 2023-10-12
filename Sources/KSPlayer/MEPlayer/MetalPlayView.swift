@@ -17,10 +17,12 @@ public protocol DisplayLayerDelegate: NSObjectProtocol {
 }
 
 public final class MetalPlayView: UIView {
-    private var formatDescription: CMFormatDescription? {
+    public private(set) var formatDescription: CMFormatDescription? {
         didSet {
             #if os(tvOS) || os(xrOS)
-            if KSOptions.displayCriteriaFormatDescriptionEnabled, let formatDescription {
+            print("[AVDisplayCriteria] Metal View format description generated")
+            if KSOptions.displayCriteriaFromMetalViewFormatDescriptionEnabled, let formatDescription {
+                print("[AVDisplayCriteria] Attempting to set Metal view Format description")
                 setDisplayCriteria(formatDescription: formatDescription)
             }
             #endif
@@ -225,13 +227,18 @@ extension MetalPlayView {
     private func setDisplayCriteria(formatDescription: CMFormatDescription) {
         guard let displayManager = UIApplication.shared.windows.first?.avDisplayManager,
               displayManager.isDisplayCriteriaMatchingEnabled,
-              !displayManager.isDisplayModeSwitchInProgress
+              !displayManager.isDisplayModeSwitchInProgress,
+              KSOptions.displayCriteriaFromMetalViewFormatDescriptionEnabled
         else {
+            print("[AVDisplayCriteria] MetalPlayView: Failed to set display criteria. KSOptions.displayCriteriaFromMetalViewFormatDescriptionEnabled: \(KSOptions.displayCriteriaFromMetalViewFormatDescriptionEnabled)")
             return
         }
         if #available(tvOS 17.0, *) {
+            print("[AVDisplayCriteria] MetalPlayView: Display criteria set with success")
             let criteria = AVDisplayCriteria(refreshRate: fps, formatDescription: formatDescription)
             displayManager.preferredDisplayCriteria = criteria
+        } else {
+            print("[AVDisplayCriteria] MetalPlayView: Display criteria not set as tvOS < 17.0")
         }
     }
     #endif

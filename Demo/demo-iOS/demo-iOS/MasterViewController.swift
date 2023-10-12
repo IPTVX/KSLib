@@ -108,7 +108,7 @@ extension MasterViewController {
 
         alert.addTextField(configurationHandler: { testField in
             testField.placeholder = "URL"
-            testField.text = "https://"
+            testField.text = "http://mgsrv3.noip.store:8080/live/smmatteo15/matteousa/344355.ts"
         })
 
         alert.addAction(UIAlertAction(title: "Play", style: .default, handler: { [weak self] _ in
