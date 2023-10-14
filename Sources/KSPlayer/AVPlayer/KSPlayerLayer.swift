@@ -50,7 +50,7 @@ public enum KSPlayerState: CustomStringConvertible {
         }
     }
 
-    public var isPlaying: Bool { self == .readyToPlay || self == .buffering || self == .bufferFinished }
+    public var isPlaying: Bool { self == .buffering || self == .bufferFinished }
 }
 
 public protocol KSPlayerLayerDelegate: AnyObject {
@@ -319,12 +319,14 @@ extension KSPlayerLayer: MediaPlayerDelegate {
         #if os(macOS)
         if let window {
             window.isMovableByWindowBackground = true
-            let naturalSize = player.naturalSize
-            if naturalSize.width > 0, naturalSize.height > 0 {
-                window.aspectRatio = naturalSize
-                var frame = window.frame
-                frame.size.height = frame.width * naturalSize.height / naturalSize.width
-                window.setFrame(frame, display: true)
+            if options.automaticWindowResize {
+                let naturalSize = player.naturalSize
+                if naturalSize.width > 0, naturalSize.height > 0 {
+                    window.aspectRatio = naturalSize
+                    var frame = window.frame
+                    frame.size.height = frame.width * naturalSize.height / naturalSize.width
+                    window.setFrame(frame, display: true)
+                }
             }
         }
         #endif
@@ -337,11 +339,6 @@ extension KSPlayerLayer: MediaPlayerDelegate {
             }
         }
         #endif
-        for track in player.tracks(mediaType: .video) where track.isEnabled {
-            #if os(tvOS) || os(xrOS)
-            setDisplayCriteria(track: track)
-            #endif
-        }
         if isAutoPlay {
             if shouldSeekTo > 0 {
                 seek(time: shouldSeekTo, autoPlay: true) { [weak self] _ in
@@ -439,31 +436,10 @@ extension KSPlayerLayer: AVPictureInPictureControllerDelegate {
 // MARK: - private functions
 
 extension KSPlayerLayer {
-    #if os(tvOS) || os(xrOS)
-    private func setDisplayCriteria(track: some MediaPlayerTrack) {
-        guard let displayManager = UIApplication.shared.windows.first?.avDisplayManager,
-              displayManager.isDisplayCriteriaMatchingEnabled,
-              !displayManager.isDisplayModeSwitchInProgress
-        else {
-            return
-        }
-        if let criteria = options.preferredDisplayCriteria(track: track) {
-            displayManager.preferredDisplayCriteria = criteria
-        }
-    }
-    #endif
-
     private func prepareToPlay() {
         startTime = CACurrentMediaTime()
         bufferedCount = 0
         player.prepareToPlay()
-        if isAutoPlay {
-            DispatchQueue.main.async {
-                self.state = .buffering
-            }
-        } else {
-            state = .prepareToPlay
-        }
         if let view = player.view {
             addSubview(view)
         }
@@ -519,7 +495,7 @@ extension KSPlayerLayer {
         }
     }
 
-    private func registerRemoteControllEvent() {
+    public func registerRemoteControllEvent() {
         let remoteCommand = MPRemoteCommandCenter.shared()
         remoteCommand.playCommand.addTarget { [weak self] _ in
             guard let self else {
