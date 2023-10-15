@@ -6,6 +6,7 @@
 //
 
 import CoreData
+import CoreMedia
 import Foundation
 import KSPlayer
 #if canImport(UIKit)
@@ -47,6 +48,24 @@ class MEOptions: KSOptions {
             }
             #endif
         }
+    }
+
+    override func updateVideo(refreshRate: Float, formatDescription: CMFormatDescription?) {
+        #if os(tvOS) || os(xrOS)
+        guard let displayManager = UIApplication.shared.windows.first?.avDisplayManager,
+              displayManager.isDisplayCriteriaMatchingEnabled,
+              !displayManager.isDisplayModeSwitchInProgress
+        else {
+            return
+        }
+        if let formatDescription {
+            if KSOptions.displayCriteriaFormatDescriptionEnabled, #available(tvOS 17.0, *) {
+                displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
+            } else {
+                displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, videoDynamicRange: formatDescription.dynamicRange.rawValue)
+            }
+        }
+        #endif
     }
 
     override func isUseDisplayLayer() -> Bool {

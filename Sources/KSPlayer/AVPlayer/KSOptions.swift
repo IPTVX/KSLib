@@ -333,8 +333,12 @@ open class KSOptions {
         else {
             return
         }
-        if KSOptions.displayCriteriaFormatDescriptionEnabled, let formatDescription, #available(tvOS 17.0, *) {
-            displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
+        if let formatDescription {
+            if KSOptions.displayCriteriaFormatDescriptionEnabled, #available(tvOS 17.0, *) {
+                displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
+            } else {
+//                displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, videoDynamicRange: formatDescription.dynamicRange.rawValue)
+            }
         }
         #endif
     }
@@ -443,15 +447,16 @@ public extension KSOptions {
         return Int(ncpu)
     }
 
-    internal static func setAudioSession() {
+    static func setAudioSession() {
         #if os(macOS)
 //        try? AVAudioSession.sharedInstance().setRouteSharingPolicy(.longFormAudio)
         #else
         let category = AVAudioSession.sharedInstance().category
-        if category != .playback, category != .playAndRecord {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
+        if category == .playback || category == .playAndRecord {
+            try? AVAudioSession.sharedInstance().setCategory(category, mode: .moviePlayback, policy: .longFormAudio)
+        } else {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
         }
-        try? AVAudioSession.sharedInstance().setMode(.moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
     }
