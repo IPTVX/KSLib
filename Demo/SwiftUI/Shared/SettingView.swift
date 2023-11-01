@@ -64,12 +64,20 @@ struct SettingVideoView: View {
     private var isUseDisplayLayer
     @Default(\.displayCriteriaFormatDescriptionEnabled)
     private var displayCriteriaFormatDescriptionEnabled
+    @Default(\.yadifMode)
+    private var yadifMode
     var body: some View {
         Form {
             Toggle("Hardware decoder", isOn: $hardwareDecode)
             Toggle("Asynchronous Decompression", isOn: $asynchronousDecompression)
             Toggle("Use DisplayLayer", isOn: $isUseDisplayLayer)
             Toggle("Enable FormatDescription DisplayCriteria ", isOn: $displayCriteriaFormatDescriptionEnabled)
+            Picker("yadif Mode", selection: $yadifMode) {
+                Text("yadif").tag(0)
+                Text("yadif_2x").tag(1)
+                Text("yadif_spatial_skip").tag(2)
+                Text("yadif_2x_spatial_skip").tag(3)
+            }
         }
     }
 }

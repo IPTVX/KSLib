@@ -15,8 +15,6 @@ public struct KSVideoPlayerView: View {
     @State
     private var title: String
     @State
-    private var delayItem: DispatchWorkItem?
-    @State
     private var showDropDownMenu = false
     @StateObject
     private var playerCoordinator = KSVideoPlayer.Coordinator()
@@ -31,36 +29,6 @@ public struct KSVideoPlayerView: View {
             #if os(macOS)
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
             #endif
-        }
-    }
-
-    @State
-    private var isMaskShow = true {
-        didSet {
-            if isMaskShow != oldValue {
-                if isMaskShow {
-                    delayItem?.cancel()
-                    // 播放的时候才自动隐藏
-                    guard playerCoordinator.state == .bufferFinished else { return }
-                    delayItem = DispatchWorkItem {
-                        isMaskShow = false
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + KSOptions.animateDelayTimeInterval,
-                                                  execute: delayItem!)
-                }
-                #if os(macOS)
-                isMaskShow ? NSCursor.unhide() : NSCursor.setHiddenUntilMouseMoves(true)
-                if let window = playerCoordinator.playerLayer?.window {
-                    if !window.styleMask.contains(.fullScreen) {
-                        window.standardWindowButton(.closeButton)?.superview?.superview?.isHidden = !isMaskShow
-                        //                    window.standardWindowButton(.zoomButton)?.isHidden = !isMaskShow
-                        //                    window.standardWindowButton(.closeButton)?.isHidden = !isMaskShow
-                        //                    window.standardWindowButton(.miniaturizeButton)?.isHidden = !isMaskShow
-                        //                    window.titleVisibility = isMaskShow ? .visible : .hidden
-                    }
-                }
-                #endif
-            }
         }
     }
 
@@ -83,15 +51,14 @@ public struct KSVideoPlayerView: View {
                         if let movieTitle = playerLayer.player.metadata["title"] {
                             title = movieTitle
                         }
-                    } else if state == .bufferFinished {
-                        isMaskShow = false
-                    } else {
-                        isMaskShow = true
                     }
+                }
+                .onBufferChanged { bufferedCount, consumeTime in
+                    print("bufferedCount \(bufferedCount), consumeTime \(consumeTime)")
                 }
             #if canImport(UIKit)
                 .onSwipe { direction in
-                    isMaskShow = true
+                    playerCoordinator.isMaskShow = true
                     if direction == .left {
                         playerCoordinator.skip(interval: -15)
                     } else if direction == .right {
@@ -112,8 +79,6 @@ public struct KSVideoPlayerView: View {
 //                    #endif
                 }
                 .onDisappear {
-                    delayItem?.cancel()
-                    delayItem = nil
                     onPlayerDisappear?(playerCoordinator.playerLayer)
                 }
                 .ignoresSafeArea()
@@ -154,14 +119,14 @@ public struct KSVideoPlayerView: View {
                     VideoControllerView(config: playerCoordinator)
                     #endif
                     // 设置opacity为0，还是会去更新View。所以只能这样了
-                    if isMaskShow {
+                    if playerCoordinator.isMaskShow {
                         VideoTimeShowView(config: playerCoordinator, model: playerCoordinator.timemodel)
                     }
                 }
                 .padding()
                 .background(.black.opacity(0.2))
                 .clipShape(RoundedRectangle(cornerRadius: 5))
-                .opacity(isMaskShow ? 1 : 0)
+                .opacity(playerCoordinator.isMaskShow ? 1 : 0)
             }
             if showDropDownMenu {
                 VideoSettingView(config: playerCoordinator, subtitleModel: playerCoordinator.subtitleModel)
@@ -181,32 +146,37 @@ public struct KSVideoPlayerView: View {
         .background(Color.black)
         .tint(.white)
         .persistentSystemOverlays(.hidden)
-        .toolbar(isMaskShow ? .visible : .hidden, for: .automatic)
-        //        .onKeyPress(.leftArrow) {
-        //            playerCoordinator.skip(interval: -15)
-        //            return .handled
-        //        }
-        //        .onKeyPress(.rightArrow) {
-        //            playerCoordinator.skip(interval: 15)
-        //            return .handled
-        //        }
+        .toolbar(playerCoordinator.isMaskShow ? .visible : .hidden, for: .automatic)
+        .onKeyPressLeftArrow {
+            playerCoordinator.skip(interval: -15)
+        }
+        .onKeyPressRightArrow {
+            playerCoordinator.skip(interval: 15)
+        }
+        .onKeyPressSapce {
+            if playerCoordinator.state.isPlaying {
+                playerCoordinator.playerLayer?.pause()
+            } else {
+                playerCoordinator.playerLayer?.play()
+            }
+        }
+
         #if os(macOS)
-            .onTapGesture(count: 2) {
-                guard let view = playerCoordinator.playerLayer else {
-                    return
-                }
-                view.window?.toggleFullScreen(nil)
-                view.needsLayout = true
-                view.layoutSubtreeIfNeeded()
+        .onTapGesture(count: 2) {
+            guard let view = playerCoordinator.playerLayer else {
+                return
             }
-            .onExitCommand {
-                playerCoordinator.playerLayer?.exitFullScreenMode()
-            }
-        #else
-            .onTapGesture {
-                isMaskShow.toggle()
-            }
+            view.window?.toggleFullScreen(nil)
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+        }
+        .onExitCommand {
+            playerCoordinator.playerLayer?.exitFullScreenMode()
+        }
         #endif
+        .onTapGesture {
+            playerCoordinator.isMaskShow.toggle()
+        }
         #if os(tvOS)
         .onPlayPauseCommand {
             if playerCoordinator.state.isPlaying {
@@ -218,8 +188,8 @@ public struct KSVideoPlayerView: View {
         .onExitCommand {
             if showDropDownMenu {
                 showDropDownMenu = false
-            } else if isMaskShow {
-                isMaskShow = false
+            } else if playerCoordinator.isMaskShow {
+                playerCoordinator.isMaskShow = false
             } else {
                 dismiss()
             }
@@ -227,7 +197,7 @@ public struct KSVideoPlayerView: View {
         #else
         .navigationTitle(title)
             .onHover {
-                isMaskShow = $0
+                playerCoordinator.isMaskShow = $0
             }
             .onDrop(of: ["public.file-url"], isTargeted: nil) { providers -> Bool in
                 providers.first?.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
@@ -248,6 +218,41 @@ public struct KSVideoPlayerView: View {
                 let info = URLSubtitleInfo(url: url)
                 playerCoordinator.subtitleModel.selectedSubtitleInfo = info
             }
+        }
+    }
+}
+
+extension View {
+    func onKeyPressLeftArrow(action: @escaping () -> Void) -> some View {
+        if #available(iOS 17.0, macOS 14.0, tvOS 17.0, *) {
+            return onKeyPress(.leftArrow) {
+                action()
+                return .handled
+            }
+        } else {
+            return self
+        }
+    }
+
+    func onKeyPressRightArrow(action: @escaping () -> Void) -> some View {
+        if #available(iOS 17.0, macOS 14.0, tvOS 17.0, *) {
+            return onKeyPress(.rightArrow) {
+                action()
+                return .handled
+            }
+        } else {
+            return self
+        }
+    }
+
+    func onKeyPressSapce(action: @escaping () -> Void) -> some View {
+        if #available(iOS 17.0, macOS 14.0, tvOS 17.0, *) {
+            return onKeyPress(.space) {
+                action()
+                return .handled
+            }
+        } else {
+            return self
         }
     }
 }
@@ -317,6 +322,7 @@ struct VideoControllerView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
+            // iOS 模拟器加keyboardShortcut会导致KSVideoPlayer.Coordinator无法释放。真机不会有这个问题
             #if !os(tvOS)
             .keyboardShortcut("s", modifiers: [.command, .shift])
             #endif
@@ -511,14 +517,14 @@ struct VideoSettingView: View {
             } label: {
                 Label("Sutitle", systemImage: "captions.bubble")
             }
-            TextField("Get more Sutitle", text: $subtitleTitle)
-            Button("Search") {
+            TextField("Sutitle delay", value: $subtitleModel.subtitleDelay, format: .number)
+            TextField("Title", text: $subtitleTitle)
+            Button("Search Sutitle") {
                 subtitleModel.searchSubtitle(query: subtitleTitle, languages: ["zh-cn"])
             }
             if let fileSize = config.playerLayer?.player.fileSize, fileSize > 0 {
                 Text("File Size \(String(format: "%.1f", fileSize / 1_000_000))MB")
             }
-            TextField("Sutitle delay", value: $subtitleModel.subtitleDelay, format: .number)
         }
         .padding()
         #if os(macOS) || targetEnvironment(macCatalyst)

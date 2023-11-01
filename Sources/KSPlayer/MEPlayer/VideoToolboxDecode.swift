@@ -10,7 +10,14 @@ import Libavformat
 #if canImport(VideoToolbox)
 import VideoToolbox
 class VideoToolboxDecode: DecodeProtocol {
-    private var session: DecompressionSession?
+    private var session: DecompressionSession? {
+        didSet {
+            if let oldValue {
+                VTDecompressionSessionInvalidate(oldValue.decompressionSession)
+            }
+        }
+    }
+
     private let options: KSOptions
     private var startTime = Int64(0)
     private var lastPosition = Int64(0)
@@ -62,7 +69,9 @@ class VideoToolboxDecode: DecodeProtocol {
                 self.lastPosition += frame.duration
                 completionHandler(.success(frame))
             }
-            if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr || status == kVTVideoDecoderBadDataErr {
+            if status == noErr {
+                VTDecompressionSessionWaitForAsynchronousFrames(session.decompressionSession)
+            } else if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr || status == kVTVideoDecoderBadDataErr {
                 if corePacket.flags & AV_PKT_FLAG_KEY == 1 {
                     throw NSError(errorCode: .codecVideoReceiveFrame, avErrorCode: status)
                 } else {
@@ -136,11 +145,6 @@ class DecompressionSession {
                                  value: pixelTransferProperties as CFDictionary)
         }
         self.decompressionSession = decompressionSession
-    }
-
-    deinit {
-        VTDecompressionSessionWaitForAsynchronousFrames(decompressionSession)
-        VTDecompressionSessionInvalidate(decompressionSession)
     }
 }
 #endif

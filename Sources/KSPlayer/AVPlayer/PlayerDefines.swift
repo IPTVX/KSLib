@@ -148,7 +148,9 @@ public struct VideoAdaptationState {
 public enum ClockProcessType {
     case remain
     case next
-    case dropNext
+    case dropNextFrame
+    case dropNextPacket
+    case dropGOPPacket
     case flush
     case seek
 }
@@ -161,6 +163,12 @@ public protocol CapacityProtocol {
     var frameMaxCount: Int { get }
     var isEndOfFile: Bool { get }
     var mediaType: AVFoundation.AVMediaType { get }
+}
+
+extension CapacityProtocol {
+    var loadedTime: TimeInterval {
+        TimeInterval(packetCount + frameCount) / TimeInterval(fps)
+    }
 }
 
 public struct LoadingState {

@@ -93,6 +93,9 @@ extension AVCodecParameters {
         }
         codecContext.pointee.codec_id = codec.pointee.id
         codecContext.pointee.flags2 |= AV_CODEC_FLAG2_FAST
+        if options.codecLowDelay {
+            codecContext.pointee.flags |= AV_CODEC_FLAG_LOW_DELAY
+        }
         var lowres = options.lowres
         if lowres > codec.pointee.max_lowres {
             lowres = codec.pointee.max_lowres
@@ -369,9 +372,7 @@ extension AVRational {
 
 extension AVBufferSrcParameters: Equatable {
     public static func == (lhs: AVBufferSrcParameters, rhs: AVBufferSrcParameters) -> Bool {
-        lhs.format == rhs.format && lhs.time_base == rhs.time_base &&
-            lhs.width == rhs.width && lhs.height == rhs.height && lhs.sample_aspect_ratio == rhs.sample_aspect_ratio &&
-            lhs.sample_rate == rhs.sample_rate && lhs.ch_layout == rhs.ch_layout
+        lhs.format == rhs.format && lhs.width == rhs.width && lhs.height == rhs.height && lhs.sample_aspect_ratio == rhs.sample_aspect_ratio && lhs.sample_rate == rhs.sample_rate && lhs.ch_layout == rhs.ch_layout
     }
 
     var arg: String {
