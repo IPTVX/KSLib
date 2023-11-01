@@ -14,6 +14,7 @@ import UIKit
 #endif
 class MEOptions: KSOptions {
     static var isUseDisplayLayer = true
+    static var yadifMode = 1
     override init() {
         super.init()
         formatContextOptions["reconnect_on_network_error"] = 1
@@ -23,7 +24,10 @@ class MEOptions: KSOptions {
     override func process(assetTrack: some MediaPlayerTrack) {
         if assetTrack.mediaType == .video {
             if [FFmpegFieldOrder.bb, .bt, .tt, .tb].contains(assetTrack.fieldOrder) {
-                videoFilters.append("yadif_videotoolbox=mode=0:parity=-1:deint=1")
+                // todo 先不要用yadif_videotoolbox，不然会crash。这个后续在看下要怎么解决
+//                videoFilters.append("yadif_videotoolbox=mode=\(MEOptions.yadifMode):parity=-1:deint=1")
+                videoFilters.append("yadif=mode=\(MEOptions.yadifMode):parity=-1:deint=1")
+                hardwareDecode = false
                 asynchronousDecompression = false
             }
             #if os(tvOS) || os(xrOS)
@@ -164,6 +168,11 @@ extension M3UModel {
 //            let deleteRequest = NSBatchDeleteRequest(fetchRequest: movieRequest)
 //            _ = try? context.execute(deleteRequest)
         }
+        do {
+            try context.save()
+        } catch {
+            KSLog(level: .error, error.localizedDescription)
+        }
     }
 
     func getMovieModels() async -> [MovieModel] {
@@ -193,9 +202,7 @@ extension M3UModel {
         }
         let result = try await m3uURL.parsePlaylist()
         guard result.count > 0 else {
-            await viewContext.perform {
-                viewContext.delete(self)
-            }
+            delete()
             return []
         }
         return await viewContext.perform {
@@ -231,10 +238,10 @@ extension M3UModel {
             }
             viewContext.perform {
                 if viewContext.hasChanges {
-                    try? viewContext.save()
                     for model in dic.values {
                         viewContext.delete(model)
                     }
+                    try? viewContext.save()
                 }
             }
             return models
@@ -278,6 +285,7 @@ extension MovieModel {
         newMovieModel.setValuesForKeys(dictionaryWithValues(forKeys: entity.attributesByName.keys.map { $0 }))
         newMovieModel.playmodel = model
         context.assign(newMovieModel, to: privateStore)
+//        try? context.save()
         newMovieModel.save()
         context.delete(self)
         return model
@@ -326,7 +334,7 @@ extension KSVideoPlayerView {
             options.syncDecodeAudio = true
         } else if url.lastPathComponent == "subrip.mkv" {
             options.asynchronousDecompression = false
-            options.videoFilters.append("yadif_videotoolbox=mode=0:parity=-1:deint=1")
+            options.videoFilters.append("yadif_videotoolbox=mode=\(MEOptions.yadifMode):parity=-1:deint=1")
         } else if url.lastPathComponent == "big_buck_bunny.mp4" {
             options.startPlayTime = 25
         } else if url.lastPathComponent == "bipbopall.m3u8" {
@@ -348,11 +356,19 @@ extension KSVideoPlayerView {
         if url.scheme == "rtmp" || url.scheme == "rtsp" {
             options.formatContextOptions["listen_timeout"] = -1
             options.formatContextOptions["fflags"] = ["nobuffer"]
-            options.preferredForwardBufferDuration = 2
+            // tcp or udp
+            options.formatContextOptions["rtsp_transport"] = "tcp"
+            options.probesize = 4096
+            options.maxAnalyzeDuration = 2_000_000
+            options.codecLowDelay = true
+            options.preferredForwardBufferDuration = 1
+            options.maxBufferDuration = 3600
             options.hardwareDecode = false
         } else {
             options.formatContextOptions["listen_timeout"] = 3
         }
+        playmodel.save()
+        model.save()
         self.init(url: url, options: options, title: model.name) { layer in
             if let layer {
                 playmodel.duration = Int16(layer.player.duration)
