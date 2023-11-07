@@ -16,7 +16,7 @@ import AppKit
 public class KSMEPlayer: NSObject {
     private var loopCount = 1
     private var playerItem: MEPlayerItem
-    private let audioOutput: AudioOutput
+    public let audioOutput: AudioOutput
     private var options: KSOptions
     private var bufferingCountDownTimer: Timer?
     public private(set) var videoOutput: (VideoOutput & UIView)? {
@@ -76,6 +76,15 @@ public class KSMEPlayer: NSObject {
         didSet {
             if playbackRate != audioOutput.playbackRate {
                 audioOutput.playbackRate = playbackRate
+                if audioOutput is AudioUnitPlayer {
+                    var audioFilters = options.audioFilters.filter {
+                        !$0.hasPrefix("atempo=")
+                    }
+                    if playbackRate != 1 {
+                        audioFilters.append("atempo=\(playbackRate)")
+                    }
+                    options.audioFilters = audioFilters
+                }
             }
         }
     }
@@ -100,8 +109,9 @@ public class KSMEPlayer: NSObject {
     }
 
     public required init(url: URL, options: KSOptions) {
+        KSOptions.setAudioSession()
+        audioOutput = KSOptions.audioPlayerType.init()
         playerItem = MEPlayerItem(url: url, options: options)
-        audioOutput = options.isUseAudioRenderer ? AudioRendererPlayer() : KSOptions.audioPlayerType.init()
         if options.videoDisable {
             videoOutput = nil
         } else {
@@ -149,7 +159,7 @@ private extension KSMEPlayer {
     @objc private func spatialCapabilityChange(notification _: Notification) {
         KSLog("[audio] spatialCapabilityChange")
         tracks(mediaType: .audio).forEach { track in
-            (track as? FFmpegAssetTrack)?.audioDescriptor?.setAudioSession(isUseAudioRenderer: options.isUseAudioRenderer)
+            (track as? FFmpegAssetTrack)?.audioDescriptor?.updateAudioFormat()
         }
     }
 
@@ -164,7 +174,7 @@ private extension KSMEPlayer {
             return
         }
         tracks(mediaType: .audio).forEach { track in
-            (track as? FFmpegAssetTrack)?.audioDescriptor?.setAudioSession(isUseAudioRenderer: options.isUseAudioRenderer)
+            (track as? FFmpegAssetTrack)?.audioDescriptor?.updateAudioFormat()
         }
         audioOutput.flush()
     }
@@ -181,10 +191,13 @@ extension KSMEPlayer: MEPlayerDelegate {
         }
         let audioDescriptor = tracks(mediaType: .audio).first { $0.isEnabled }.flatMap {
             $0 as? FFmpegAssetTrack
-        }?.audioDescriptor ?? .defaultValue
+        }?.audioDescriptor
         runInMainqueue { [weak self] in
             guard let self else { return }
-            self.audioOutput.prepare(audioFormat: audioDescriptor.audioFormat)
+            if let audioDescriptor {
+                KSLog("[audio] audio type: \(self.audioOutput) prepare audioFormat )")
+                self.audioOutput.prepare(audioFormat: audioDescriptor.audioFormat)
+            }
             if let controlTimebase = videoOutput?.displayLayer.controlTimebase, self.options.startPlayTime > 1 {
                 CMTimebaseSetTime(controlTimebase, time: CMTimeMake(value: Int64(self.options.startPlayTime), timescale: 1))
             }
@@ -322,6 +335,10 @@ extension KSMEPlayer: MediaPlayerProtocol {
     public var fileSize: Double { playerItem.fileSize }
 
     public var seekable: Bool { playerItem.seekable }
+
+    public var videoBitrate: Int { playerItem.videoBitrate }
+
+    public var audioBitrate: Int { playerItem.audioBitrate }
 
     public func seek(time: TimeInterval, completion: @escaping ((Bool) -> Void)) {
         let time = max(time, 0)
@@ -547,50 +564,5 @@ public extension KSMEPlayer {
 
     var bytesRead: Int64 {
         playerItem.bytesRead
-    }
-
-    var attackTime: Float {
-        get {
-            audioOutput.attackTime
-        }
-        set {
-            audioOutput.attackTime = newValue
-        }
-    }
-
-    var releaseTime: Float {
-        get {
-            audioOutput.releaseTime
-        }
-        set {
-            audioOutput.releaseTime = newValue
-        }
-    }
-
-    var threshold: Float {
-        get {
-            audioOutput.threshold
-        }
-        set {
-            audioOutput.threshold = newValue
-        }
-    }
-
-    var expansionRatio: Float {
-        get {
-            audioOutput.expansionRatio
-        }
-        set {
-            audioOutput.expansionRatio = newValue
-        }
-    }
-
-    var overallGain: Float {
-        get {
-            audioOutput.overallGain
-        }
-        set {
-            audioOutput.overallGain = newValue
-        }
     }
 }
