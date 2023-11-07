@@ -79,8 +79,6 @@ public extension KSOptions {
     static var stackSize = 65536
     static var isClearVideoWhereReplace = true
     /// true: AVSampleBufferAudioRenderer false: AVAudioEngine
-//    static var isUseAudioRenderer = KSOptions.isSpatialAudioEnabled
-    static var isUseAudioRenderer = false
     static var audioPlayerType: AudioOutput.Type = AudioEnginePlayer.self
     static var videoPlayerType: (VideoOutput & UIView).Type = MetalPlayView.self
     static func colorSpace(ycbcrMatrix: CFString?, transferFunction: CFString?) -> CGColorSpace? {
@@ -178,6 +176,18 @@ final class Packet: ObjectQueueItem {
     var size: Int32 = 0
     var assetTrack: FFmpegAssetTrack!
     private(set) var corePacket = av_packet_alloc()
+    var isKeyFrame: Bool {
+        if let corePacket {
+            return corePacket.pointee.flags & AV_PKT_FLAG_KEY == AV_PKT_FLAG_KEY
+        } else {
+            return false
+        }
+    }
+
+    var seconds: Double {
+        assetTrack.timebase.cmtime(for: position).seconds
+    }
+
     func fill() {
         guard let corePacket else {
             return

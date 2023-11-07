@@ -50,7 +50,7 @@ class VideoToolboxDecode: DecodeProtocol {
                 }
                 guard status == noErr else {
                     if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr || status == kVTVideoDecoderBadDataErr {
-                        if corePacket.flags & AV_PKT_FLAG_KEY == 1 {
+                        if packet.isKeyFrame {
                             completionHandler(.failure(NSError(errorCode: .codecVideoReceiveFrame, avErrorCode: status)))
                         }
                     }
@@ -59,7 +59,7 @@ class VideoToolboxDecode: DecodeProtocol {
                 let frame = VideoVTBFrame(fps: session.assetTrack.nominalFrameRate)
                 frame.corePixelBuffer = imageBuffer
                 frame.timebase = session.assetTrack.timebase
-                if packetFlags & AV_PKT_FLAG_KEY == 1, packetFlags & AV_PKT_FLAG_DISCARD != 0, self.lastPosition > 0 {
+                if packet.isKeyFrame, packetFlags & AV_PKT_FLAG_DISCARD != 0, self.lastPosition > 0 {
                     self.startTime = self.lastPosition - pts
                 }
                 self.lastPosition = max(self.lastPosition, pts)
@@ -72,7 +72,7 @@ class VideoToolboxDecode: DecodeProtocol {
             if status == noErr {
                 VTDecompressionSessionWaitForAsynchronousFrames(session.decompressionSession)
             } else if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr || status == kVTVideoDecoderBadDataErr {
-                if corePacket.flags & AV_PKT_FLAG_KEY == 1 {
+                if packet.isKeyFrame {
                     throw NSError(errorCode: .codecVideoReceiveFrame, avErrorCode: status)
                 } else {
                     // 解决从后台切换到前台，解码失败的问题
@@ -106,8 +106,7 @@ class DecompressionSession {
     fileprivate var assetTrack: FFmpegAssetTrack
     init?(assetTrack: FFmpegAssetTrack, options: KSOptions) {
         self.assetTrack = assetTrack
-        let format = AVPixelFormat(assetTrack.codecpar.format)
-        guard let pixelFormatType = format.osType(fullRange: assetTrack.fullRangeVideo), let formatDescription = assetTrack.formatDescription else {
+        guard let pixelFormatType = assetTrack.pixelFormatType, let formatDescription = assetTrack.formatDescription else {
             return nil
         }
         self.formatDescription = formatDescription

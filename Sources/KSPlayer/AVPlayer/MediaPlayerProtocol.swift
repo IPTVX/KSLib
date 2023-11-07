@@ -18,6 +18,8 @@ public protocol MediaPlayback: AnyObject {
     var fileSize: Double { get }
     var metadata: [String: String] { get }
     var naturalSize: CGSize { get }
+    var audioBitrate: Int { get }
+    var videoBitrate: Int { get }
     var currentPlaybackTime: TimeInterval { get }
     func prepareToPlay()
     func shutdown()
@@ -127,6 +129,23 @@ public enum FFmpegFieldOrder: UInt8 {
     case bt // < Bottom coded first, top displayed first
 }
 
+extension FFmpegFieldOrder: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .unknown, .progressive:
+            return "progressive"
+        case .tt:
+            return "top first"
+        case .bb:
+            return "bottom first"
+        case .tb:
+            return "top coded first (swapped)"
+        case .bt:
+            return "bottom coded first (swapped)"
+        }
+    }
+}
+
 // swiftlint:enable identifier_name
 public extension MediaPlayerTrack {
     var codecType: FourCharCode {
@@ -208,7 +227,7 @@ public extension CMFormatDescription {
         let cotentRange: DynamicRange
         if codecType.string == "dvhe" || codecType == kCMVideoCodecType_DolbyVisionHEVC {
             cotentRange = .dolbyVision
-        } else if transferFunction == kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String { /// HDR
+        } else if codecType.bitDepth == 10 || transferFunction == kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String { /// HDR
             cotentRange = .hdr10
         } else if transferFunction == kCVImageBufferTransferFunction_ITU_R_2100_HLG as String { /// HLG
             cotentRange = .hlg
