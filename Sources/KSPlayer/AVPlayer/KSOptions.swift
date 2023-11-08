@@ -74,7 +74,6 @@ open class KSOptions {
     public var audioLocale: Locale?
     // sutile
     public var autoSelectEmbedSubtitle = true
-    public var subtitleDisable = false
     public var isSeekImageSubtitle = false
     // video
     public var display = DisplayEnum.plane
@@ -299,9 +298,19 @@ open class KSOptions {
     /**
             在创建解码器之前可以对KSOptions和assetTrack做一些处理。例如判断fieldOrder为tt或bb的话，那就自动加videofilters
      */
-    open func process(assetTrack _: some MediaPlayerTrack) {}
+    open func process(assetTrack: some MediaPlayerTrack) {
+        if assetTrack.mediaType == .video {
+            if [FFmpegFieldOrder.bb, .bt, .tt, .tb].contains(assetTrack.fieldOrder) {
+                // todo 先不要用yadif_videotoolbox，不然会crash。这个后续在看下要怎么解决
+//                videoFilters.append("yadif_videotoolbox=mode=\(KSOptions.yadifMode):parity=-1:deint=1")
+                videoFilters.append("yadif=mode=\(KSOptions.yadifMode):parity=-1:deint=1")
+                hardwareDecode = false
+                asynchronousDecompression = false
+            }
+        }
+    }
 
-    open func updateVideo(refreshRate: Float, formatDescription: CMFormatDescription?) {
+    open func updateVideo(refreshRate: Float, isDovi: Bool, formatDescription: CMFormatDescription?) {
         #if os(tvOS) || os(xrOS)
         guard let displayManager = UIApplication.shared.windows.first?.avDisplayManager,
               displayManager.isDisplayCriteriaMatchingEnabled,
@@ -313,7 +322,8 @@ open class KSOptions {
             if KSOptions.displayCriteriaFormatDescriptionEnabled, #available(tvOS 17.0, *) {
                 displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
             } else {
-//                displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, videoDynamicRange: formatDescription.dynamicRange.rawValue)
+                let dynamicRange = isDovi ? .dolbyVision : formatDescription.dynamicRange
+//                displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, videoDynamicRange: dynamicRange.rawValue)
             }
         }
         #endif
@@ -479,12 +489,9 @@ public extension KSOptions {
     static func outputNumberOfChannels(channelCount: AVAudioChannelCount) -> AVAudioChannelCount {
         let maximumOutputNumberOfChannels = AVAudioChannelCount(AVAudioSession.sharedInstance().maximumOutputNumberOfChannels)
         let preferredOutputNumberOfChannels = AVAudioChannelCount(AVAudioSession.sharedInstance().preferredOutputNumberOfChannels)
-        KSLog("[audio] maximumOutputNumberOfChannels: \(maximumOutputNumberOfChannels)")
-        KSLog("[audio] preferredOutputNumberOfChannels: \(preferredOutputNumberOfChannels)")
         let isSpatialAudioEnabled = isSpatialAudioEnabled(channelCount: channelCount)
-        KSLog("[audio] isSpatialAudioEnabled: \(isSpatialAudioEnabled)")
         let isUseAudioRenderer = KSOptions.audioPlayerType == AudioRendererPlayer.self
-        KSLog("[audio] isUseAudioRenderer: \(isUseAudioRenderer)")
+        KSLog("[audio] maximumOutputNumberOfChannels: \(maximumOutputNumberOfChannels), preferredOutputNumberOfChannels: \(preferredOutputNumberOfChannels), isSpatialAudioEnabled: \(isSpatialAudioEnabled), isUseAudioRenderer: \(isUseAudioRenderer) ")
         let maxRouteChannelsCount = AVAudioSession.sharedInstance().currentRoute.outputs.compactMap {
             $0.channels?.count
         }.max() ?? 2
@@ -492,10 +499,8 @@ public extension KSOptions {
         var channelCount = channelCount
         if channelCount > 2 {
             let minChannels = min(maximumOutputNumberOfChannels, channelCount)
-            if minChannels > preferredOutputNumberOfChannels {
-                try? AVAudioSession.sharedInstance().setPreferredOutputNumberOfChannels(Int(minChannels))
-                KSLog("[audio] set preferredOutputNumberOfChannels: \(minChannels)")
-            }
+            try? AVAudioSession.sharedInstance().setPreferredOutputNumberOfChannels(Int(minChannels))
+            KSLog("[audio] set preferredOutputNumberOfChannels: \(minChannels)")
             // iOS 有空间音频功能，所以不用处理
             #if os(tvOS) || targetEnvironment(simulator)
             if !(isUseAudioRenderer && isSpatialAudioEnabled) {
@@ -505,6 +510,7 @@ public extension KSOptions {
             }
             #endif
         } else {
+            try? AVAudioSession.sharedInstance().setPreferredOutputNumberOfChannels(2)
             channelCount = 2
         }
         KSLog("[audio] outputNumberOfChannels: \(AVAudioSession.sharedInstance().outputNumberOfChannels)")
