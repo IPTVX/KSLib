@@ -32,7 +32,7 @@ open class KSOptions {
      AVSEEK_FLAG_ANY: 4
      AVSEEK_FLAG_FRAME: 8
      */
-    public var seekFlags = Int32(0)
+    public var seekFlags = Int32(1)
     // ffmpeg only cache http
     public var cache = false
     //  record stream
@@ -107,6 +107,7 @@ open class KSOptions {
     public internal(set) var decodeVideoTime = 0.0
     public init() {
         // 参数的配置可以参考protocols.texi 和 http.c
+        formatContextOptions["scan_all_pmts"] = 1
         formatContextOptions["auto_convert"] = 0
         formatContextOptions["fps_probe_size"] = 3
 //        formatContextOptions["max_analyze_duration"] = 300 * 1000
@@ -223,12 +224,17 @@ open class KSOptions {
         nil
     }
 
-    open func videoFrameMaxCount(fps _: Float, naturalSize _: CGSize) -> Int {
-        16
+    open func videoFrameMaxCount(fps _: Float, naturalSize _: CGSize, isLive: Bool) -> UInt8 {
+        isLive ? 4 : 16
     }
 
-    open func audioFrameMaxCount(fps: Float, channelCount _: Int) -> Int {
-        Int(fps) >> 2
+    open func audioFrameMaxCount(fps: Float, channelCount _: Int) -> UInt8 {
+        let count = Int(fps) >> 2
+        if count >= UInt8.max {
+            return UInt8.max
+        } else {
+            return UInt8(count)
+        }
     }
 
     /// customize dar
@@ -334,9 +340,7 @@ open class KSOptions {
         #endif
         let diff = nextVideoTime - desire
 //        print("[video] video diff \(diff) audio \(main.positionTime) interval \(CACurrentMediaTime() - main.lastMediaTime) render interval \(CACurrentMediaTime() - lastMediaTime)")
-        if diff > 10 || diff < -10 {
-            return (diff, .next)
-        } else if diff > 1 / Double(fps * 2) {
+        if diff > 1 / Double(fps * 2) {
             videoClockDelayCount = 0
             return (diff, .remain)
         } else {
@@ -501,16 +505,16 @@ public extension KSOptions {
             // iOS 有空间音频功能，所以不用处理
             #if os(tvOS) || targetEnvironment(simulator)
             if !(isUseAudioRenderer && isSpatialAudioEnabled) {
-                // 不要用maxRouteChannelsCount来panduan，有可能会不准。导致多音道设备也返回2（一开始播放一个2声道，就容易出现）
+                // 不要用maxRouteChannelsCount来判断，有可能会不准。导致多音道设备也返回2（一开始播放一个2声道，就容易出现），也不能用outputNumberOfChannels来判断，有可能会返回2
 //                channelCount = AVAudioChannelCount(min(AVAudioSession.sharedInstance().outputNumberOfChannels, maxRouteChannelsCount))
-                channelCount = AVAudioChannelCount(AVAudioSession.sharedInstance().outputNumberOfChannels)
+                channelCount = minChannels
             }
             #endif
         } else {
             try? AVAudioSession.sharedInstance().setPreferredOutputNumberOfChannels(2)
             channelCount = 2
         }
-        KSLog("[audio] outputNumberOfChannels: \(AVAudioSession.sharedInstance().outputNumberOfChannels)")
+        KSLog("[audio] outputNumberOfChannels: \(AVAudioSession.sharedInstance().outputNumberOfChannels) output channelCount: \(channelCount)")
         return channelCount
     }
     #endif
