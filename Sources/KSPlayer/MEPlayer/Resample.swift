@@ -228,13 +228,10 @@ class AudioSwresample: Swresample {
 public class AudioDescriptor: Equatable {
 //    static let defaultValue = AudioDescriptor()
     public let sampleRate: Int32
+    public private(set) var audioFormat: AVAudioFormat
+    fileprivate(set) var channel: AVChannelLayout
     fileprivate let sampleFormat: AVSampleFormat
-    fileprivate var channel: AVChannelLayout
     fileprivate var outChannel: AVChannelLayout
-    private(set) var audioFormat: AVAudioFormat
-    public var channelCount: AVAudioChannelCount {
-        AVAudioChannelCount(channel.nb_channels)
-    }
 
     private convenience init() {
         self.init(sampleFormat: AV_SAMPLE_FMT_FLT, sampleRate: 44100, channel: AVChannelLayout.defaultValue)
@@ -333,16 +330,12 @@ public class AudioDescriptor: Equatable {
         //        AVAudioChannelLayout(layout: outChannel.layoutTag.channelLayout)
     }
 
-    public func setAudioFormat() -> AVAudioFormat {
+    public func updateAudioFormat() {
         #if os(macOS)
         let channelCount = AVAudioChannelCount(2)
         #else
-        let channelCount = KSOptions.outputNumberOfChannels(channelCount: channelCount)
+        let channelCount = KSOptions.outputNumberOfChannels(channelCount: AVAudioChannelCount(channel.nb_channels))
         #endif
-        return AudioDescriptor.audioFormat(sampleFormat: sampleFormat, sampleRate: sampleRate, outChannel: &outChannel, channelCount: channelCount)
-    }
-
-    public func updateAudioFormat() {
-        audioFormat = setAudioFormat()
+        audioFormat = AudioDescriptor.audioFormat(sampleFormat: sampleFormat, sampleRate: sampleRate, outChannel: &outChannel, channelCount: channelCount)
     }
 }
