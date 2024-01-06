@@ -147,10 +147,10 @@ extension KSVideoPlayer: UIViewRepresentable {
         }
 
         private var delayItem: DispatchWorkItem?
-        fileprivate var onPlay: ((TimeInterval, TimeInterval) -> Void)?
-        fileprivate var onFinish: ((KSPlayerLayer, Error?) -> Void)?
-        fileprivate var onStateChanged: ((KSPlayerLayer, KSPlayerState) -> Void)?
-        fileprivate var onBufferChanged: ((Int, TimeInterval) -> Void)?
+        public var onPlay: ((TimeInterval, TimeInterval) -> Void)?
+        public var onFinish: ((KSPlayerLayer, Error?) -> Void)?
+        public var onStateChanged: ((KSPlayerLayer, KSPlayerState) -> Void)?
+        public var onBufferChanged: ((Int, TimeInterval) -> Void)?
         #if canImport(UIKit)
         fileprivate var onSwipe: ((UISwipeGestureRecognizer.Direction) -> Void)?
         @objc fileprivate func swipeGestureAction(_ recognizer: UISwipeGestureRecognizer) {
@@ -212,6 +212,8 @@ extension KSVideoPlayer: UIViewRepresentable {
 
 extension KSVideoPlayer.Coordinator: KSPlayerLayerDelegate {
     public func player(layer: KSPlayerLayer, state: KSPlayerState) {
+        self.state = state
+        onStateChanged?(layer, state)
         if state == .readyToPlay {
             playbackRate = layer.player.playbackRate
             if let subtitleDataSouce = layer.player.subtitleDataSouce {
@@ -229,8 +231,6 @@ extension KSVideoPlayer.Coordinator: KSPlayerLayerDelegate {
         } else {
             isMaskShow = true
         }
-        self.state = state
-        onStateChanged?(layer, state)
     }
 
     public func player(layer _: KSPlayerLayer, currentTime: TimeInterval, totalTime: TimeInterval) {

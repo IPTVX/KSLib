@@ -41,13 +41,12 @@ public final class MetalPlayView: UIView, VideoOutput {
     private var fps = Float(60) {
         didSet {
             if fps != oldValue {
-                let preferredFramesPerSecond = Int(ceil(fps))
-                displayLink.preferredFramesPerSecond = preferredFramesPerSecond << 1
-                #if os(iOS)
-                if #available(iOS 15.0, tvOS 15.0, *) {
-                    displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: Float(preferredFramesPerSecond), maximum: Float(preferredFramesPerSecond << 1))
+                let preferredFramesPerSecond = ceil(fps)
+                if #available(iOS 15.0, tvOS 15.0, macOS 14.0, *) {
+                    displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: preferredFramesPerSecond, maximum: 2 * preferredFramesPerSecond, __preferred: preferredFramesPerSecond)
+                } else {
+                    displayLink.preferredFramesPerSecond = Int(preferredFramesPerSecond) << 1
                 }
-                #endif
                 options.updateVideo(refreshRate: fps, isDovi: isDovi, formatDescription: formatDescription)
             }
         }
@@ -212,24 +211,18 @@ extension MetalPlayView {
                 checkFormatDescription(pixelBuffer: pixelBuffer)
                 metalView.draw(pixelBuffer: pixelBuffer, display: options.display, size: size)
             }
-            renderSource?.setVideo(time: cmtime)
+            renderSource?.setVideo(time: cmtime, position: frame.position)
         }
     }
 
     private func checkFormatDescription(pixelBuffer: PixelBufferProtocol) {
-        guard let pixelBuffer = pixelBuffer.cvPixelBuffer else {
-            return
-        }
-        if formatDescription == nil || !CMVideoFormatDescriptionMatchesImageBuffer(formatDescription!, imageBuffer: pixelBuffer) {
+        if formatDescription == nil || !pixelBuffer.matche(formatDescription: formatDescription!) {
             if formatDescription != nil {
                 displayView.removeFromSuperview()
                 displayView = AVSampleBufferDisplayView()
                 addSubview(displayView)
             }
-            let err = CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pixelBuffer, formatDescriptionOut: &formatDescription)
-            if err != noErr {
-                KSLog("Error at CMVideoFormatDescriptionCreateForImageBuffer \(err)")
-            }
+            formatDescription = pixelBuffer.formatDescription
         }
     }
 
@@ -369,6 +362,14 @@ class CADisplayLink {
     private var runloop: RunLoop?
     private var mode = RunLoop.Mode.default
     public var preferredFramesPerSecond = 60
+    @available(macOS 12.0, *)
+    public var preferredFrameRateRange: CAFrameRateRange {
+        get {
+            CAFrameRateRange()
+        }
+        set {}
+    }
+
     public var timestamp: TimeInterval {
         var timeStamp = CVTimeStamp()
         if CVDisplayLinkGetCurrentTime(displayLink, &timeStamp) == kCVReturnSuccess, (timeStamp.flags & CVTimeStampFlags.hostTimeValid.rawValue) != 0 {

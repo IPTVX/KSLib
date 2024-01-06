@@ -31,8 +31,8 @@ enum MESourceState {
 public protocol OutputRenderSourceDelegate: AnyObject {
     func getVideoOutputRender(force: Bool) -> VideoVTBFrame?
     func getAudioOutputRender() -> AudioFrame?
-    func setAudio(time: CMTime)
-    func setVideo(time: CMTime)
+    func setAudio(time: CMTime, position: Int64)
+    func setVideo(time: CMTime, position: Int64)
 }
 
 protocol CodecCapacityDelegate: AnyObject {
@@ -50,9 +50,17 @@ protocol MEPlayerDelegate: AnyObject {
 // MARK: protocol
 
 public protocol ObjectQueueItem {
+    var timebase: Timebase { get }
+    var timestamp: Int64 { get set }
     var duration: Int64 { get set }
+    // byte position
     var position: Int64 { get set }
     var size: Int32 { get set }
+}
+
+extension ObjectQueueItem {
+    var seconds: TimeInterval { cmtime.seconds }
+    var cmtime: CMTime { timebase.cmtime(for: timestamp) }
 }
 
 public protocol FrameOutput: AnyObject {
@@ -63,11 +71,6 @@ public protocol FrameOutput: AnyObject {
 
 protocol MEFrame: ObjectQueueItem {
     var timebase: Timebase { get set }
-}
-
-extension MEFrame {
-    var seconds: TimeInterval { cmtime.seconds }
-    var cmtime: CMTime { timebase.cmtime(for: position) }
 }
 
 // MARK: model
@@ -191,10 +194,14 @@ extension Timebase {
 
 final class Packet: ObjectQueueItem {
     var duration: Int64 = 0
+    var timestamp: Int64 = 0
     var position: Int64 = 0
     var size: Int32 = 0
-    var assetTrack: FFmpegAssetTrack!
     private(set) var corePacket = av_packet_alloc()
+    var timebase: Timebase {
+        assetTrack.timebase
+    }
+
     var isKeyFrame: Bool {
         if let corePacket {
             return corePacket.pointee.flags & AV_PKT_FLAG_KEY == AV_PKT_FLAG_KEY
@@ -203,17 +210,16 @@ final class Packet: ObjectQueueItem {
         }
     }
 
-    var seconds: Double {
-        assetTrack.timebase.cmtime(for: position).seconds
-    }
-
-    func fill() {
-        guard let corePacket else {
-            return
+    var assetTrack: FFmpegAssetTrack! {
+        didSet {
+            guard let packet = corePacket?.pointee else {
+                return
+            }
+            timestamp = packet.pts == Int64.min ? packet.dts : packet.pts
+            position = packet.pos
+            duration = packet.duration
+            size = packet.size
         }
-        position = corePacket.pointee.pts == Int64.min ? corePacket.pointee.dts : corePacket.pointee.pts
-        duration = corePacket.pointee.duration
-        size = corePacket.pointee.size
     }
 
     deinit {
@@ -223,6 +229,7 @@ final class Packet: ObjectQueueItem {
 }
 
 final class SubtitleFrame: MEFrame {
+    var timestamp: Int64 = 0
     var timebase: Timebase
     var duration: Int64 = 0
     var position: Int64 = 0
@@ -238,6 +245,7 @@ public final class AudioFrame: MEFrame {
     let dataSize: Int
     let audioFormat: AVAudioFormat
     public var timebase = Timebase.defaultValue
+    public var timestamp: Int64 = 0
     public var duration: Int64 = 0
     public var position: Int64 = 0
     public var size: Int32 = 0
@@ -255,6 +263,7 @@ public final class AudioFrame: MEFrame {
     init(array: [AudioFrame]) {
         audioFormat = array[0].audioFormat
         timebase = array[0].timebase
+        timestamp = array[0].timestamp
         position = array[0].position
         var dataSize = 0
         for frame in array {
@@ -375,6 +384,7 @@ public final class VideoVTBFrame: MEFrame {
     // 交叉视频的duration会不准，直接减半了
     public var duration: Int64 = 0
     public var position: Int64 = 0
+    public var timestamp: Int64 = 0
     public var size: Int32 = 0
     public let fps: Float
     public let isDovi: Bool
