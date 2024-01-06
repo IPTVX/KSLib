@@ -12,8 +12,10 @@ public class FFmpegAssetTrack: MediaPlayerTrack {
     public private(set) var trackID: Int32 = 0
     public let codecName: String
     public var name: String = ""
-    public private(set) var language: String?
-    public private(set) var nominalFrameRate: Float = 0
+    public private(set) var languageCode: String?
+    public var nominalFrameRate: Float = 0
+    public private(set) var avgFrameRate = Timebase.defaultValue
+    public private(set) var realFrameRate = Timebase.defaultValue
     public private(set) var bitRate: Int64 = 0
     public let mediaType: AVFoundation.AVMediaType
     public let formatName: String?
@@ -35,6 +37,7 @@ public class FFmpegAssetTrack: MediaPlayerTrack {
     public let formatDescription: CMFormatDescription?
     var closedCaptionsTrack: FFmpegAssetTrack?
     let isConvertNALSize: Bool
+    var seekByBytes = false
     public var description: String {
         var description = codecName
         if let formatName {
@@ -57,7 +60,9 @@ public class FFmpegAssetTrack: MediaPlayerTrack {
         if bitRate > 0 {
             description += ", \(bitRate.kmFormatted)bps"
         }
-
+        if let language {
+            description += "(\(language))"
+        }
         return description
     }
 
@@ -76,6 +81,8 @@ public class FFmpegAssetTrack: MediaPlayerTrack {
         }
         startTime = timebase.cmtime(for: stream.pointee.start_time)
         self.timebase = timebase
+        avgFrameRate = Timebase(stream.pointee.avg_frame_rate)
+        realFrameRate = Timebase(stream.pointee.r_frame_rate)
         if mediaType == .audio {
             var frameSize = codecpar.frame_size
             if frameSize < 1 {
@@ -83,28 +90,24 @@ public class FFmpegAssetTrack: MediaPlayerTrack {
             }
             nominalFrameRate = max(Float(codecpar.sample_rate / frameSize), 48)
         } else {
-            let frameRate = stream.pointee.avg_frame_rate
             if stream.pointee.duration > 0, stream.pointee.nb_frames > 0, stream.pointee.nb_frames != stream.pointee.duration {
                 nominalFrameRate = Float(stream.pointee.nb_frames) * Float(timebase.den) / Float(stream.pointee.duration) * Float(timebase.num)
-            } else if frameRate.den > 0, frameRate.num > 0 {
-                nominalFrameRate = Float(frameRate.num) / Float(frameRate.den)
+            } else if avgFrameRate.den > 0, avgFrameRate.num > 0 {
+                nominalFrameRate = Float(avgFrameRate.num) / Float(avgFrameRate.den)
             } else {
                 nominalFrameRate = 24
             }
         }
 
-        if let value = metadata["language"] {
-            language = Locale.current.localizedString(forLanguageCode: value)
+        if let value = metadata["language"], value != "und" {
+            languageCode = value
         } else {
-            language = nil
+            languageCode = nil
         }
         if let value = metadata["title"] {
             name = value
         } else {
-            name = codecName
-            if let language {
-                name += "(\(language))"
-            }
+            name = languageCode ?? codecName
         }
         // AV_DISPOSITION_DEFAULT
         if mediaType == .subtitle {
@@ -153,13 +156,15 @@ public class FFmpegAssetTrack: MediaPlayerTrack {
         } else if codecpar.codec_type == AVMEDIA_TYPE_VIDEO {
             audioDescriptor = nil
             mediaType = .video
-            for i in 0 ..< codecpar.nb_coded_side_data {
-                let sideData = codecpar.coded_side_data[Int(i)]
-                if sideData.type == AV_PKT_DATA_DOVI_CONF {
-                    dovi = sideData.data.withMemoryRebound(to: DOVIDecoderConfigurationRecord.self, capacity: 1) { $0 }.pointee
-                } else if sideData.type == AV_PKT_DATA_DISPLAYMATRIX {
-                    let matrix = sideData.data.withMemoryRebound(to: Int32.self, capacity: 1) { $0 }
-                    rotation = Int16(Int(-av_display_rotation_get(matrix)) % 360)
+            if codecpar.nb_coded_side_data > 0, let sideDatas = codecpar.coded_side_data {
+                for i in 0 ..< codecpar.nb_coded_side_data {
+                    let sideData = sideDatas[Int(i)]
+                    if sideData.type == AV_PKT_DATA_DOVI_CONF {
+                        dovi = sideData.data.withMemoryRebound(to: DOVIDecoderConfigurationRecord.self, capacity: 1) { $0 }.pointee
+                    } else if sideData.type == AV_PKT_DATA_DISPLAYMATRIX {
+                        let matrix = sideData.data.withMemoryRebound(to: Int32.self, capacity: 1) { $0 }
+                        rotation = Int16(Int(-av_display_rotation_get(matrix)) % 360)
+                    }
                 }
             }
             let sar = codecpar.sample_aspect_ratio.size

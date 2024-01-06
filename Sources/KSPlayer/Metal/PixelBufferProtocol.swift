@@ -16,23 +16,24 @@ import UIKit
 #endif
 
 public protocol PixelBufferProtocol: AnyObject {
-    var aspectRatio: CGSize { get set }
-    var planeCount: Int { get }
     var width: Int { get }
     var height: Int { get }
     var bitDepth: Int32 { get }
     var leftShift: UInt8 { get }
-//    var colorPrimaries: CFString? { get }
-//    var transferFunction: CFString? { get }
-    var yCbCrMatrix: CFString? { get }
-    var colorspace: CGColorSpace? { get }
-    var attachmentsDic: CFDictionary? { get }
+    var planeCount: Int { get }
+    var formatDescription: CMVideoFormatDescription? { get }
+    var aspectRatio: CGSize { get set }
+    var yCbCrMatrix: CFString? { get set }
+    var colorPrimaries: CFString? { get set }
+    var transferFunction: CFString? { get set }
+    var colorspace: CGColorSpace? { get set }
     var cvPixelBuffer: CVPixelBuffer? { get }
     var isFullRangeVideo: Bool { get }
     func cgImage() -> CGImage?
     func textures() -> [MTLTexture]
     func widthOfPlane(at planeIndex: Int) -> Int
     func heightOfPlane(at planeIndex: Int) -> Int
+    func matche(formatDescription: CMVideoFormatDescription) -> Bool
 }
 
 extension PixelBufferProtocol {
@@ -66,6 +67,14 @@ extension CVPixelBuffer: PixelBufferProtocol {
     var isPlanar: Bool { CVPixelBufferIsPlanar(self) }
 
     public var planeCount: Int { isPlanar ? CVPixelBufferGetPlaneCount(self) : 1 }
+    public var formatDescription: CMVideoFormatDescription? {
+        var formatDescription: CMVideoFormatDescription?
+        let err = CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: self, formatDescriptionOut: &formatDescription)
+        if err != noErr {
+            KSLog("Error at CMVideoFormatDescriptionCreateForImageBuffer \(err)")
+        }
+        return formatDescription
+    }
 
     public var isFullRangeVideo: Bool {
         CVBufferGetAttachment(self, kCMFormatDescriptionExtension_FullRangeVideo, nil)?.takeUnretainedValue() as? Bool ?? false
@@ -86,7 +95,7 @@ extension CVPixelBuffer: PixelBufferProtocol {
         }
     }
 
-    var colorPrimaries: CFString? {
+    public var colorPrimaries: CFString? {
         get {
             CVBufferGetAttachment(self, kCVImageBufferColorPrimariesKey, nil)?.takeUnretainedValue() as? NSString
         }
@@ -97,7 +106,7 @@ extension CVPixelBuffer: PixelBufferProtocol {
         }
     }
 
-    var transferFunction: CFString? {
+    public var transferFunction: CFString? {
         get {
             CVBufferGetAttachment(self, kCVImageBufferTransferFunctionKey, nil)?.takeUnretainedValue() as? NSString
         }
@@ -148,6 +157,10 @@ extension CVPixelBuffer: PixelBufferProtocol {
     public func textures() -> [MTLTexture] {
         MetalRender.texture(pixelBuffer: self)
     }
+
+    public func matche(formatDescription: CMVideoFormatDescription) -> Bool {
+        CMVideoFormatDescriptionMatchesImageBuffer(formatDescription, imageBuffer: self)
+    }
 }
 
 class PixelBuffer: PixelBufferProtocol {
@@ -159,11 +172,11 @@ class PixelBuffer: PixelBufferProtocol {
     let leftShift: UInt8
     let isFullRangeVideo: Bool
     var cvPixelBuffer: CVPixelBuffer? { nil }
-    var attachmentsDic: CFDictionary?
-    let colorPrimaries: CFString?
-    let transferFunction: CFString?
-    let yCbCrMatrix: CFString?
-    let colorspace: CGColorSpace?
+    var colorPrimaries: CFString?
+    var transferFunction: CFString?
+    var yCbCrMatrix: CFString?
+    var colorspace: CGColorSpace?
+    var formatDescription: CMVideoFormatDescription? = nil
     private let format: AVPixelFormat
     private let formats: [MTLPixelFormat]
     private let widths: [Int]
@@ -176,11 +189,6 @@ class PixelBuffer: PixelBufferProtocol {
         colorPrimaries = frame.color_primaries.colorPrimaries
         transferFunction = frame.color_trc.transferFunction
         colorspace = KSOptions.colorSpace(ycbcrMatrix: yCbCrMatrix, transferFunction: transferFunction)
-        var attachments = [CFString: CFString]()
-        attachments[kCVImageBufferColorPrimariesKey] = colorPrimaries
-        attachments[kCVImageBufferTransferFunctionKey] = transferFunction
-        attachments[kCVImageBufferYCbCrMatrixKey] = yCbCrMatrix
-        attachmentsDic = attachments as CFDictionary
         width = Int(frame.width)
         height = Int(frame.height)
         isFullRangeVideo = frame.color_range == AVCOL_RANGE_JPEG
@@ -209,17 +217,26 @@ class PixelBuffer: PixelBufferProtocol {
         let bytes = Array(tuple: frame.data)
         let bytesPerRow = Array(tuple: frame.linesize).compactMap { Int($0) }
         for i in 0 ..< planeCount {
-            lineSize.append(bytesPerRow[i].alignment(value: MetalRender.device.minimumLinearTextureAlignment(for: formats[i])))
-            buffers.append(MetalRender.device.makeBuffer(length: lineSize[i] * heights[i]))
-            if bytesPerRow[i] == lineSize[i] {
-                buffers[i]?.contents().copyMemory(from: bytes[i]!, byteCount: heights[i] * lineSize[i])
+            let alignment = MetalRender.device.minimumLinearTextureAlignment(for: formats[i])
+            lineSize.append(bytesPerRow[i].alignment(value: alignment))
+            let buffer: MTLBuffer?
+            let size = lineSize[i]
+            let byteCount = bytesPerRow[i]
+            let height = heights[i]
+            if byteCount == size {
+                buffer = MetalRender.device.makeBuffer(bytes: bytes[i]!, length: height * size)
             } else {
-                let contents = buffers[i]?.contents()
+                buffer = MetalRender.device.makeBuffer(length: heights[i] * lineSize[i])
+                let contents = buffer?.contents()
                 let source = bytes[i]!
-                for j in 0 ..< heights[i] {
-                    contents?.advanced(by: j * lineSize[i]).copyMemory(from: source.advanced(by: j * bytesPerRow[i]), byteCount: bytesPerRow[i])
+                var j = 0
+                // 性能 while > stride(from:to:by:) > for in
+                while j < height {
+                    contents?.advanced(by: j * size).copyMemory(from: source.advanced(by: j * byteCount), byteCount: byteCount)
+                    j += 1
                 }
             }
+            buffers.append(buffer)
         }
         self.lineSize = lineSize
         self.buffers = buffers
@@ -242,11 +259,15 @@ class PixelBuffer: PixelBufferProtocol {
         if format == AV_PIX_FMT_RGB24 {
             image = CGImage.make(rgbData: buffers[0]!.contents().assumingMemoryBound(to: UInt8.self), linesize: Int(lineSize[0]), width: width, height: height)
         } else {
-            let scale = VideoSwresample(dstFormat: AV_PIX_FMT_RGB24, isDovi: false)
+            let scale = VideoSwresample(isDovi: false)
             image = scale.transfer(format: format, width: Int32(width), height: Int32(height), data: buffers.map { $0?.contents().assumingMemoryBound(to: UInt8.self) }, linesize: lineSize.map { Int32($0) })?.cgImage()
             scale.shutdown()
         }
         return image
+    }
+
+    public func matche(formatDescription: CMVideoFormatDescription) -> Bool {
+        self.formatDescription == formatDescription
     }
 }
 
