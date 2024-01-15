@@ -274,7 +274,7 @@ open class KSOptions {
     private var idetTypeMap = [VideoInterlacingType: Int]()
     open func filter(log: String) {
         if log.starts(with: "Repeated Field:") {
-            log.split(separator: ",").forEach { str in
+            for str in log.split(separator: ",") {
                 let map = str.split(separator: ":")
                 if map.count >= 2 {
                     if String(map[0].trimmingCharacters(in: .whitespaces)) == "Multi frame" {
@@ -319,15 +319,16 @@ open class KSOptions {
                 asynchronousDecompression = false
                 let yadif = hardwareDecode ? "yadif_videotoolbox" : "yadif"
                 var yadifMode = KSOptions.yadifMode
-                if let assetTrack = assetTrack as? FFmpegAssetTrack {
-                    if assetTrack.realFrameRate.num == 2 * assetTrack.avgFrameRate.num, assetTrack.realFrameRate.den == assetTrack.avgFrameRate.den {
-                        if yadifMode == 1 {
-                            yadifMode = 0
-                        } else if yadifMode == 3 {
-                            yadifMode = 2
-                        }
-                    }
-                }
+//                if let assetTrack = assetTrack as? FFmpegAssetTrack {
+//                    if assetTrack.realFrameRate.num == 2 * assetTrack.avgFrameRate.num, assetTrack.realFrameRate.den == assetTrack.avgFrameRate.den {
+//                        if yadifMode == 1 {
+//                            yadifMode = 0
+//                        } else if yadifMode == 3 {
+//                            yadifMode = 2
+//                        }
+//                    }
+//                }
+                videoFilters.append("idet")
                 videoFilters.append("\(yadif)=mode=\(yadifMode):parity=-1:deint=1")
                 if yadifMode == 1 || yadifMode == 3 {
                     assetTrack.nominalFrameRate = assetTrack.nominalFrameRate * 2
@@ -466,8 +467,8 @@ public extension KSOptions {
     static var isAccurateSeek = false
     /// Applies to short videos only
     static var isLoopPlay = false
-    /// 是否自动播放，默认false
-    static var isAutoPlay = false
+    /// 是否自动播放，默认true
+    static var isAutoPlay = true
     /// seek完是否自动播放
     static var isSeekedAutoPlay = true
     static var hardwareDecode = true
@@ -475,6 +476,7 @@ public extension KSOptions {
     static var asynchronousDecompression = false
     static var isPipPopViewController = false
     static var canStartPictureInPictureAutomaticallyFromInline = true
+    static var preferredFrame = true
     static var displayCriteriaFormatDescriptionEnabled = false
     /// 日志级别
     static var logLevel = LogLevel.warning
